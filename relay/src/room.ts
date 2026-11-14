@@ -11,11 +11,45 @@ import {
   unauthorized,
 } from "./crypto";
 import type { Env } from "./env";
+import {
+  CAR_INBOX_KEEP,
+  CAR_KEEP_MS,
+  CAR_OUTBOX_KEEP,
+  CAR_WEBHOOK_TIMEOUT_MS,
+  buildWebhookRequest,
+  parseCarReply,
+  parseCarSay,
+  webhookTarget,
+  type CarReply,
+  type CarSay,
+} from "./car";
+
+type Role = "device" | "agent" | "car";
 
 interface Attachment {
-  role: "device" | "agent";
+  role: Role;
   windowStart: number;
   count: number;
+  room?: string;
+  origin?: string;
+}
+
+interface InboxRow {
+  seq: number;
+  id: string;
+  bot: string;
+  text: string;
+  at: number;
+  [key: string]: SqlStorageValue;
+}
+
+interface OutboxRow {
+  seq: number;
+  bot: string;
+  text: string;
+  reply_to: string | null;
+  at: number;
+  [key: string]: SqlStorageValue;
 }
 
 interface TokenRow {
@@ -45,6 +79,20 @@ export class Room extends DurableObject<Env> {
           expires_at INTEGER NOT NULL,
           used INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS car_inbox (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT NOT NULL,
+          bot TEXT NOT NULL,
+          text TEXT NOT NULL,
+          at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS car_outbox (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          bot TEXT NOT NULL,
+          text TEXT NOT NULL,
+          reply_to TEXT,
+          at INTEGER NOT NULL
+        );
       `);
     });
   }
@@ -61,8 +109,14 @@ export class Room extends DurableObject<Env> {
     if (request.method === "POST" && path.endsWith("/revoke")) {
       return this.revoke(request);
     }
-    if (request.method === "GET" && (path.endsWith("/device") || path.endsWith("/agent"))) {
-      const role = path.endsWith("/device") ? "device" : "agent";
+    if (request.method === "POST" && path.endsWith("/car/reply")) {
+      return this.carReplyHttp(request);
+    }
+    if (request.method === "GET" && path.endsWith("/car/inbox")) {
+      return this.carInboxHttp(request);
+    }
+    if (request.method === "GET" && (path.endsWith("/device") || path.endsWith("/agent") || path.endsWith("/car"))) {
+      const role: Role = path.endsWith("/device") ? "device" : path.endsWith("/agent") ? "agent" : "car";
       return this.upgrade(request, role);
     }
     return new Response("not found", { status: 404 });
@@ -92,6 +146,11 @@ export class Room extends DurableObject<Env> {
       return;
     }
     const text = typeof message === "string" ? message : new TextDecoder().decode(message);
+    if (attachment.role === "car") {
+      // Car frames carry text only; they are never parsed as phone RPC.
+      this.carFrame(ws, attachment, text);
+      return;
+    }
     const method = methodName(text);
     console.log(JSON.stringify({ event: "fwd", method, bytes }));
     const other = attachment.role === "device" ? "agent" : "device";
@@ -123,6 +182,8 @@ export class Room extends DurableObject<Env> {
     const codeHash = await sha256Hex(pairCode);
     this.ctx.storage.sql.exec("DELETE FROM token");
     this.ctx.storage.sql.exec("DELETE FROM pair");
+    this.ctx.storage.sql.exec("DELETE FROM car_inbox");
+    this.ctx.storage.sql.exec("DELETE FROM car_outbox");
     this.ctx.storage.sql.exec("INSERT INTO token (role, hash) VALUES (?, ?)", "agent", agentHash);
     this.ctx.storage.sql.exec(
       "INSERT INTO pair (code_hash, expires_at, used) VALUES (?, ?, 0)",
@@ -175,31 +236,195 @@ export class Room extends DurableObject<Env> {
     if (!match) return unauthorized();
     this.ctx.storage.sql.exec("DELETE FROM token");
     this.ctx.storage.sql.exec("DELETE FROM pair");
+    this.ctx.storage.sql.exec("DELETE FROM car_inbox");
+    this.ctx.storage.sql.exec("DELETE FROM car_outbox");
     for (const socket of this.ctx.getWebSockets()) socket.close(4000, "revoked");
     return Response.json({ ok: true });
   }
 
-  private async upgrade(request: Request, role: "device" | "agent"): Promise<Response> {
-    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
-      return new Response("expected websocket", { status: 426 });
+  private carFrame(ws: WebSocket, attachment: Attachment, text: string): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
     }
+    const type = parsed && typeof parsed === "object" ? (parsed as { type?: unknown }).type : undefined;
+    if (type === "car.sync") {
+      this.flushOutbox(ws);
+      return;
+    }
+    const say = parseCarSay(parsed);
+    if (!say) {
+      console.log(JSON.stringify({ event: "car_drop", reason: "bad_frame" }));
+      safeSend(ws, JSON.stringify({ type: "car.error", error: "bad_frame" }));
+      return;
+    }
+    const at = Date.now();
+    this.ctx.storage.sql.exec(
+      "INSERT INTO car_inbox (id, bot, text, at) VALUES (?, ?, ?, ?)",
+      say.id,
+      say.bot,
+      say.text,
+      at,
+    );
+    this.pruneCar(at);
+    const webhook = webhookTarget(this.env) ? "pending" : "off";
+    console.log(JSON.stringify({ event: "car_say", bytes: say.text.length, webhook }));
+    safeSend(ws, JSON.stringify({ type: "car.ack", id: say.id, queued: true, webhook }));
+    if (webhook === "pending") {
+      this.ctx.waitUntil(this.sendWebhook(say, attachment.room ?? "", attachment.origin ?? "", at));
+    }
+  }
+
+  private async sendWebhook(say: CarSay, room: string, origin: string, at: number): Promise<void> {
+    const request = buildWebhookRequest(this.env, say, { room, origin, at });
+    if (!request) return;
+    let status = 0;
+    try {
+      const response = await fetch(request, { signal: AbortSignal.timeout(CAR_WEBHOOK_TIMEOUT_MS) });
+      status = response.status;
+      await response.body?.cancel();
+    } catch {
+      status = 0;
+    }
+    const ok = status >= 200 && status < 300;
+    // Log the status only. Never log the URL, key, or message text.
+    console.log(JSON.stringify({ event: "car_webhook", status }));
+    for (const socket of this.ctx.getWebSockets("car")) {
+      safeSend(socket, JSON.stringify({ type: "car.status", id: say.id, webhook: ok ? "sent" : "failed", status }));
+    }
+  }
+
+  private flushOutbox(ws: WebSocket): void {
+    const rows = this.ctx.storage.sql
+      .exec<OutboxRow>("SELECT seq, bot, text, reply_to, at FROM car_outbox ORDER BY seq")
+      .toArray();
+    for (const row of rows) {
+      const reply: CarReply = { bot: String(row.bot), text: String(row.text) };
+      if (row.reply_to) reply.replyTo = String(row.reply_to);
+      if (!safeSend(ws, carReplyFrame(reply, Number(row.at)))) return;
+      this.ctx.storage.sql.exec("DELETE FROM car_outbox WHERE seq = ?", row.seq);
+    }
+  }
+
+  private pruneCar(now: number): void {
+    const cutoff = now - CAR_KEEP_MS;
+    this.ctx.storage.sql.exec("DELETE FROM car_inbox WHERE at < ?", cutoff);
+    this.ctx.storage.sql.exec(
+      "DELETE FROM car_inbox WHERE seq NOT IN (SELECT seq FROM car_inbox ORDER BY seq DESC LIMIT ?)",
+      CAR_INBOX_KEEP,
+    );
+    this.ctx.storage.sql.exec("DELETE FROM car_outbox WHERE at < ?", cutoff);
+    this.ctx.storage.sql.exec(
+      "DELETE FROM car_outbox WHERE seq NOT IN (SELECT seq FROM car_outbox ORDER BY seq DESC LIMIT ?)",
+      CAR_OUTBOX_KEEP,
+    );
+  }
+
+  private async carReplyHttp(request: Request): Promise<Response> {
+    if (!(await this.tokenOk(request, "agent"))) return unauthorized();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json({ ok: false, error: "bad_request" }, { status: 400 });
+    }
+    const reply = parseCarReply(body);
+    if (!reply) return Response.json({ ok: false, error: "bad_request" }, { status: 400 });
+    const at = Date.now();
+    const frame = carReplyFrame(reply, at);
+    let delivered = false;
+    for (const socket of this.ctx.getWebSockets("car")) {
+      if (safeSend(socket, frame)) delivered = true;
+    }
+    if (!delivered) {
+      this.ctx.storage.sql.exec(
+        "INSERT INTO car_outbox (bot, text, reply_to, at) VALUES (?, ?, ?, ?)",
+        reply.bot,
+        reply.text,
+        reply.replyTo ?? null,
+        at,
+      );
+      this.pruneCar(at);
+    }
+    console.log(JSON.stringify({ event: "car_reply", delivered }));
+    return Response.json({ ok: true, delivered: delivered ? "live" : "queued" });
+  }
+
+  private async carInboxHttp(request: Request): Promise<Response> {
+    if (!(await this.tokenOk(request, "agent"))) return unauthorized();
+    const url = new URL(request.url);
+    const after = Number.parseInt(url.searchParams.get("after") ?? "0", 10);
+    const limitRaw = Number.parseInt(url.searchParams.get("limit") ?? "50", 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+    this.pruneCar(Date.now());
+    const rows = this.ctx.storage.sql
+      .exec<InboxRow>(
+        "SELECT seq, id, bot, text, at FROM car_inbox WHERE seq > ? ORDER BY seq LIMIT ?",
+        Number.isFinite(after) ? after : 0,
+        limit,
+      )
+      .toArray();
+    const messages = rows.map((row) => ({
+      seq: Number(row.seq),
+      id: String(row.id),
+      bot: String(row.bot),
+      text: String(row.text),
+      at: new Date(Number(row.at)).toISOString(),
+    }));
+    return Response.json({ ok: true, messages });
+  }
+
+  /** True when the bearer matches the stored token for that role. */
+  private async tokenOk(request: Request, role: "device" | "agent"): Promise<boolean> {
     const token = bearerToken(request);
-    if (!token) return unauthorized();
+    if (!token) return false;
     const presented = await sha256Hex(token);
     const rows = this.ctx.storage.sql
       .exec<{ hash: string }>("SELECT hash FROM token WHERE role = ?", role)
       .toArray();
-    if (rows.length === 0 || !timingSafeEqual(String(rows[0].hash), presented)) return unauthorized();
+    return rows.length > 0 && timingSafeEqual(String(rows[0].hash), presented);
+  }
+
+  private async upgrade(request: Request, role: Role): Promise<Response> {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("expected websocket", { status: 426 });
+    }
+    // The car socket is opened by the paired phone, so it uses the device token.
+    if (!(await this.tokenOk(request, role === "agent" ? "agent" : "device"))) return unauthorized();
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     const previous = this.ctx.getWebSockets(role);
     this.ctx.acceptWebSocket(server, [role]);
+    const url = new URL(request.url);
     const attachment: Attachment = { role, windowStart: 0, count: 0 };
+    if (role === "car") {
+      attachment.room = roomFromPath(url.pathname);
+      attachment.origin = url.origin;
+    }
     server.serializeAttachment(attachment);
     for (const existing of previous) existing.close(4001, "replaced");
     return new Response(null, { status: 101, webSocket: client });
   }
+}
+
+function carReplyFrame(reply: CarReply, at: number): string {
+  return JSON.stringify({ type: "car.reply", ...reply, at: new Date(at).toISOString() });
+}
+
+function safeSend(ws: WebSocket, text: string): boolean {
+  try {
+    ws.send(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function roomFromPath(path: string): string {
+  return path.match(/\/v1\/room\/([^/]+)\//)?.[1] ?? "";
 }
 
 function messageByteLength(message: string | ArrayBuffer): number {

@@ -121,6 +121,8 @@ describe("abridge mcp", () => {
           "phone_type",
           "phone_volume",
           "phone_wait",
+          "car_reply",
+          "car_inbox",
         ].sort(),
       );
       for (const tool of listed.tools) {
