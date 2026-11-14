@@ -179,6 +179,53 @@ class SafetyCoreTest {
     }
 
     @Test
+    fun timeoutsExpireTheSessionWhenStayArmedIsOff() = runBlocking {
+        var now = 0L
+        val port = FakePort(Scene("com.example.messages", "Messages", messages()))
+        val core = PhoneCore(port, AuditLog(), clock = { now }, prompter = ConfirmPrompter(ask = { ConfirmAnswer.APPROVE }))
+        core.config = SafetyConfig(idleTimeoutMin = 10, sessionTimeoutMin = 60, stayArmed = false)
+        core.arm(0)
+        now = 9 * 60_000L
+        assertFalse(core.isExpired(now))
+        now = 10 * 60_000L
+        assertTrue(core.isExpired(now))
+        // Session cap also applies with activity in between.
+        core.arm(0)
+        for (minute in 5L..60L step 5) {
+            now = minute * 60_000L
+            if (minute < 60) ok(core.handle("status", buildJsonObject { }))
+        }
+        assertTrue(core.isExpired(60 * 60_000L))
+        assertEquals("SESSION_EXPIRED", fail(core.handle("status", buildJsonObject { })))
+        assertFalse(core.armed.value)
+    }
+
+    @Test
+    fun stayArmedIgnoresTimeoutsButStopAndDenylistStillWork() = runBlocking {
+        var now = 0L
+        val port = FakePort(Scene("com.example.messages", "Messages", messages()))
+        val core = PhoneCore(port, AuditLog(), clock = { now }, prompter = ConfirmPrompter(ask = { ConfirmAnswer.APPROVE }))
+        core.config = SafetyConfig(idleTimeoutMin = 1, sessionTimeoutMin = 5, stayArmed = true)
+        core.arm(0)
+        now = 48 * 60 * 60_000L
+        assertFalse(core.isExpired(now))
+        val status = ok(core.handle("status", buildJsonObject { }))
+        assertEquals("true", status.string("stay_armed"))
+        assertTrue(core.armed.value)
+        // Denylist still wins while staying armed.
+        port.scene = Scene(Policy.SELF, "Agent Bridge", messages())
+        assertEquals("DENIED_APP", fail(core.handle("tap", buildJsonObject { put("x", 1); put("y", 2) })))
+        assertEquals(0, port.taps)
+        // Manual disarm (Stop, tile, kill switch) still ends it at once.
+        core.disarm()
+        assertEquals("PAUSED", fail(core.handle("status", buildJsonObject { })))
+        // Turning the setting off brings the timeouts back.
+        core.config = core.config.copy(stayArmed = false)
+        core.arm(now)
+        assertTrue(core.isExpired(now + 60_000L))
+    }
+
+    @Test
     fun volumeSetsMusicStreamThroughConfirmAndAudit() = runBlocking {
         val prompts = mutableListOf<String>()
         val world =

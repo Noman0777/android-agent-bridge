@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -27,7 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import dev.brantley.agentbridge.BridgeApp
+import dev.brantley.agentbridge.car.CarBots
+import dev.brantley.agentbridge.car.CarChatService
 import dev.brantley.agentbridge.data.AppSettings
 import dev.brantley.agentbridge.data.toSafety
 import dev.brantley.agentbridge.pair.Pairing
@@ -45,6 +52,31 @@ fun SettingsScreen(onBack: () -> Unit) {
     var extra by remember { mutableStateOf("") }
     var idle by remember(settings.idleTimeoutMin) { mutableFloatStateOf(settings.idleTimeoutMin.toFloat()) }
     var session by remember(settings.sessionTimeoutMin) { mutableFloatStateOf(settings.sessionTimeoutMin.toFloat()) }
+    var confirmStayArmed by remember { mutableStateOf(false) }
+    var botsText by remember(settings.carBots) { mutableStateOf(settings.carBots) }
+    if (confirmStayArmed) {
+        AlertDialog(
+            onDismissRequest = { confirmStayArmed = false },
+            title = { Text("Stay armed until you disarm?") },
+            text = {
+                Text(
+                    "The idle timeout and session cap will not end the session. Your agent can keep asking to use " +
+                        "the screen until you tap Stop on the notification, the Quick Settings tile, or Disarm here. " +
+                        "Confirm prompts, the denylist, and redaction still apply.",
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    confirmStayArmed = false
+                    scope.launch {
+                        save(app, settings.copy(stayArmed = true))
+                        if (app.core.armed.value) ArmedService.start(context)
+                    }
+                }) { Text("Stay armed") }
+            },
+            dismissButton = { TextButton(onClick = { confirmStayArmed = false }) { Text("Cancel") } },
+        )
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
     ) {
@@ -63,6 +95,23 @@ fun SettingsScreen(onBack: () -> Unit) {
         Slider(value = session, onValueChange = { session = it }, valueRange = 5f..240f, onValueChangeFinished = {
             scope.launch { save(app, settings.copy(sessionTimeoutMin = session.toInt())) }
         })
+        RowSwitch("Stay armed until I disarm", settings.stayArmed) { on ->
+            if (on) {
+                confirmStayArmed = true
+            } else {
+                scope.launch {
+                    save(app, settings.copy(stayArmed = false))
+                    if (app.core.armed.value) ArmedService.start(context)
+                }
+            }
+        }
+        Text(
+            if (settings.stayArmed) {
+                "On: timeouts are off. The armed notification stays up until you stop it."
+            } else {
+                "Off: the idle timeout and session cap disarm the phone."
+            },
+        )
         RowSwitch("Disarm when the screen locks", settings.disarmOnLock) {
             scope.launch { save(app, settings.copy(disarmOnLock = it)) }
         }
@@ -70,6 +119,40 @@ fun SettingsScreen(onBack: () -> Unit) {
             scope.launch { save(app, settings.copy(screenshotsEnabled = it)) }
         }
         Text("Screenshots stay off until you enable them. Secure screens still fail.")
+        Text("Car chat (Android Auto)", style = MaterialTheme.typography.titleMedium)
+        Text("Talk to your agents by voice in the car. Each name below shows up as its own conversation.")
+        RowSwitch("Car chat", settings.carChatEnabled) { on ->
+            scope.launch {
+                save(app, settings.copy(carChatEnabled = on))
+                if (on) {
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        (context as? android.app.Activity)?.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7)
+                    }
+                    CarChatService.start(context)
+                } else {
+                    CarChatService.stop(context)
+                    app.car.notifier.cancelAll(CarBots.parse(settings.carBots))
+                }
+            }
+        }
+        OutlinedTextField(
+            value = botsText,
+            onValueChange = { botsText = it },
+            label = { Text("Bot names, one per line") },
+            minLines = 2,
+        )
+        Button(onClick = {
+            scope.launch {
+                val names = CarBots.parse(botsText).joinToString("\n")
+                app.car.notifier.cancelAll(CarBots.parse(settings.carBots))
+                save(app, settings.copy(carBots = names))
+                botsText = names
+                if (settings.carChatEnabled) CarChatService.restart(context)
+            }
+        }) { Text("Save bot names") }
+        Text("Car messages are text between you and your agents. Phone control still needs Arm and its safety checks.")
         Text("Denylist", style = MaterialTheme.typography.titleMedium)
         Text("Locked rows stay blocked. Deny wins over anything the agent asks.")
         Policy.displayDeny(settings.toSafety()).forEach { (pkg, locked) ->

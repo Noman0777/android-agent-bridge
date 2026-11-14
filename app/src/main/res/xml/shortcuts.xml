@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- "Hey Google, send a message to <bot> on Agent Bridge". Assistant fills the
+         recipient from the long-lived car-* conversation shortcuts the app publishes. -->
+    <capability android:name="actions.intent.CREATE_MESSAGE">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="dev.brantley.agentbridge.car.CarComposeActivity"
+            android:targetPackage="dev.brantley.agentbridge">
+            <parameter
+                android:name="message.recipient.name"
+                android:key="bot" />
+            <parameter
+                android:name="message.text"
+                android:key="text" />
+        </intent>
+    </capability>
+    <!-- Share sheet: share text straight to a bot conversation. -->
+    <share-target android:targetClass="dev.brantley.agentbridge.car.CarComposeActivity">
+        <data android:mimeType="text/plain" />
+        <category android:name="dev.brantley.agentbridge.category.CAR_CHAT" />
+    </share-target>
+</shortcuts>

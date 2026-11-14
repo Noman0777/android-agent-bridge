@@ -20,6 +20,10 @@ fun deviceWebSocketUrl(relay: String, room: String): String {
     return "$base/v1/room/$room/device"
 }
 
+/** Car chat socket. Same device token, separate path, never the phone-control channel. */
+fun carWebSocketUrl(relay: String, room: String): String =
+    deviceWebSocketUrl(relay, room).removeSuffix("/device") + "/car"
+
 fun claimUrl(relay: String): String = httpOrigin(relay) + "/v1/pair/claim"
 
 fun revokeUrl(relay: String): String = httpOrigin(relay) + "/v1/revoke"

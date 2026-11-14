@@ -63,6 +63,7 @@ class PhoneCore(
 
     fun isExpired(now: Long = clock()): Boolean {
         if (!armed.value) return false
+        if (config.stayArmed) return false
         return now - lastActivity >= idleMs() || now - sessionStart >= sessionMs()
     }
 
@@ -380,6 +381,7 @@ class PhoneCore(
             put("window_title", scene.windowTitle)
             put("idle_timeout_min", config.idleTimeoutMin.coerceIn(1, 60))
             put("session_remaining_ms", (sessionStart + sessionMs() - clock()).coerceAtLeast(0))
+            put("stay_armed", config.stayArmed)
         }
 
     private fun resolveIfNeeded(method: String, params: JsonObject, scene: Scene): ResolveResult? {

@@ -122,6 +122,15 @@ The relay is not a safety boundary.
 
 Tokens are 32 random bytes, encoded as base64url. Only SHA-256 hashes are stored. Compares are constant-time. Frames larger than 1 MiB are dropped and the socket is closed. Each socket is limited to 20 messages per second. Logs are method name and byte size only.
 
+## Car chat
+
+Car chat frames are separate from the phone RPC envelope and never reach the phone-control handler. See `docs/CAR_CHAT.md`.
+
+- `GET /v1/room/:room/car` upgrades to WebSocket with the **device** token. Phone to relay: `{"type":"car.say","id","bot","text"}` (bot 1–64 chars, text 1–2000) and `{"type":"car.sync"}` (deliver queued replies). Relay to phone: `{"type":"car.ack","id","queued":true,"webhook":"pending"|"off"}`, `{"type":"car.status","id","webhook":"sent"|"failed","status"}`, `{"type":"car.reply","bot","text","replyTo"?,"at"}`, and `{"type":"car.error","error":"bad_frame"}`.
+- `POST /v1/room/:room/car/reply` with the **agent** token and `{bot, text, replyTo?}` returns `{ok, delivered:"live"|"queued"}`. Queued replies are kept for 24 hours (last 50).
+- `GET /v1/room/:room/car/inbox?after=<seq>&limit=<n>` with the **agent** token returns `{ok, messages:[{seq,id,bot,text,at}]}`. The inbox keeps 24 hours (last 200). Pairing a room again or revoking clears both queues.
+- If `CAR_WEBHOOK_URL` is set, each `car.say` is also POSTed there. Format and auth settings are in `docs/CAR_CHAT.md`.
+
 ## Deep link
 
 ```text

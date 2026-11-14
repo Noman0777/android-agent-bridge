@@ -36,6 +36,19 @@ Open the printed `agentbridge://` link on the phone, check the host and the room
 
 The phone must use `https` for any host other than `localhost`, `127.0.0.1`, and `10.0.2.2`. Cloudflare can see frames. There is no end-to-end encryption yet.
 
+## Car chat (optional)
+
+The relay also carries Android Auto car chat: the phone sends `car.say` on `/v1/room/<room>/car`, the relay stores it for `GET /v1/room/<room>/car/inbox` and, if configured, POSTs it to a webhook. Agents answer with `POST /v1/room/<room>/car/reply`. Both HTTP routes need the room's agent token.
+
+Webhook secrets are all optional. Set them with `npx wrangler secret put <NAME>`:
+
+- `CAR_WEBHOOK_URL`: `https://` endpoint that receives each message. Unset means no webhook.
+- `CAR_WEBHOOK_KEY`: secret for the receiver.
+- `CAR_WEBHOOK_AUTH_HEADER`: header name, default `Authorization`.
+- `CAR_WEBHOOK_AUTH_SCHEME`: prefix before the key, default `Bearer`; `none` sends the bare key.
+
+The request is `POST` with JSON `{type:"car.say", id, bot, text, message, at, room, replyUrl}`. Full details are in `docs/CAR_CHAT.md` in the main repository.
+
 ## Local dev
 
 ```sh
