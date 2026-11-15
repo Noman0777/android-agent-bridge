@@ -10,11 +10,14 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import androidx.car.app.connection.CarConnection
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
 import dev.brantley.agentbridge.BridgeApp
 import dev.brantley.agentbridge.R
+import dev.brantley.agentbridge.net.BridgeLog
 import dev.brantley.agentbridge.net.RelaySocket
 import dev.brantley.agentbridge.net.SocketStatus
 import dev.brantley.agentbridge.net.carWebSocketUrl
@@ -25,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Keeps the car chat socket open while Car chat is on. It uses the paired device
@@ -34,9 +38,14 @@ import kotlinx.coroutines.launch
 class CarChatService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var socket: RelaySocket? = null
+    private var connection: CarConnection? = null
+    private var connectionObserver: Observer<Int>? = null
 
     @Volatile
     private var running = false
+
+    @Volatile
+    private var links = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -58,8 +67,12 @@ class CarChatService : Service() {
 
     override fun onDestroy() {
         running = false
+        links = false
+        unwatchCar()
         socket?.disconnect()
-        (application as BridgeApp).car.detach()
+        val app = application as BridgeApp
+        app.car.detach()
+        app.car.clearDrive()
         scope.cancel()
         super.onDestroy()
     }
@@ -68,15 +81,19 @@ class CarChatService : Service() {
         val app = application as BridgeApp
         val settings = app.settings.settings.first()
         val token = app.tokens.get().orEmpty()
+        if (!running) return
         if (!settings.carChatEnabled || settings.relayUrl.isBlank() || settings.room.isBlank() || token.isBlank()) {
-            shutdown()
+            withContext(Dispatchers.Main) { shutdown() }
             return
         }
         val bots = CarBots.parse(settings.carBots)
         app.car.bots = bots
         app.car.notifier.ensureChannel()
         runCatching { app.car.notifier.publishShortcuts(bots) }
-        bots.forEach { app.car.prompt(it) }
+        withContext(Dispatchers.Main) {
+            if (running) watchCar()
+        }
+        if (!running) return
         val relay = RelaySocket(scope, isArmed = { running })
         socket = relay
         app.car.attach { frame -> relay.send(frame) }
@@ -85,8 +102,49 @@ class CarChatService : Service() {
         relay.connect(carWebSocketUrl(settings.relayUrl, settings.room), token)
     }
 
+    @Synchronized
+    private fun watchCar() {
+        if (connectionObserver != null || !running) return
+        links = true
+        val app = application as BridgeApp
+        app.car.allowPosts()
+        val started =
+            runCatching {
+                val link = CarConnection(this)
+                val observer =
+                    Observer<Int> { type ->
+                        if (!links || !running) return@Observer
+                        app.car.onCarConnection(type)
+                    }
+                connection = link
+                connectionObserver = observer
+                link.type.observeForever(observer)
+            }
+        if (started.isFailure) {
+            links = false
+            connection = null
+            connectionObserver = null
+            BridgeLog.e(TAG, "car connection observer failed")
+        }
+    }
+
+    @Synchronized
+    private fun unwatchCar() {
+        val observer = connectionObserver
+        val link = connection
+        connectionObserver = null
+        connection = null
+        if (observer != null && link != null) {
+            runCatching { link.type.removeObserver(observer) }
+        }
+    }
+
+    @Synchronized
     private fun shutdown() {
         running = false
+        links = false
+        unwatchCar()
+        (application as BridgeApp).car.onServiceStopped()
         socket?.disconnect()
         socket = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -125,6 +183,7 @@ class CarChatService : Service() {
     }
 
     companion object {
+        private const val TAG = "CarChatService"
         private const val SERVICE_CHANNEL_ID = "agent_bridge_car_service"
         private const val NOTIFICATION_ID = 42
         const val ACTION_STOP = "dev.brantley.agentbridge.car.STOP"

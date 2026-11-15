@@ -99,12 +99,14 @@ Replying to an existing conversation always works: Android Auto reads the messag
 - One **long-lived conversation shortcut per bot**, with a `Person`, the conversation category, and a `actions.intent.CREATE_MESSAGE` capability binding for the bot name.
 - An App Actions `shortcuts.xml` capability for `actions.intent.CREATE_MESSAGE` (`message.recipient.name`, `message.text`), so "Hey Google, send a message to Travel Bot on Agent Bridge" can resolve to the app.
 - A share target, so text shared from any app can go to a bot conversation.
-- When Car chat turns on, each bot's conversation is posted quietly with "Ready. Reply to send me a task." Tap it on the car screen and say your message. This is the reliable path.
+- When Android Auto connects (a projected head unit or a native car), each bot gets a silent "Talk to {name}." notification with Reply and Mark as read. It is posted once per connection, with no sound, and it is skipped if that bot already has unread lines. Tap it and say your message. This is the reliable path. Android Auto only shows notifications that arrive during the current session, so the prompt is posted on connect rather than when Car chat turns on.
+- After you mark the conversation read, or after you send a message and nothing is waiting, that silent "Talk to {name}." line stays up while the car is still connected, so you can start another message. Previously read lines are added with `addHistoricMessage`. Android Auto reads only the new lines (`addMessage`).
+- Unplugging the car removes those standing prompts. Unread replies stay. Turning Car chat off in Settings, or Turn off on the "Car chat on" notification, clears the car notifications.
 
 Caveats:
 
 - Google decides which third-party apps the Assistant or Gemini will send messages through, and that has changed over time. On some phones it will answer "I can't send messages with that app yet" or try Google Messages instead. App Actions are only fully live for Play Store apps; a sideloaded app may need the App Actions test tool in Android Studio, or may not be matched at all.
-- If the voice start does not work, use the seeded conversation, or add an Android Auto launcher shortcut: Android Auto settings, **Customize launcher**, **Add a shortcut to the launcher**, **An Assistant action**, with a command like "send a message to Travel Bot on Agent Bridge".
+- If the voice start does not work, use the "Talk to {name}." notification, or add an Android Auto launcher shortcut: Android Auto settings, **Customize launcher**, **Add a shortcut to the launcher**, **An Assistant action**, with a command like "send a message to Travel Bot on Agent Bridge".
 - A launch the system reports as coming from Google's assistant or Android Auto sends right away. Any other app that opens the compose entry point gets an on-phone "Send to …?" confirmation, so another app cannot put words in your mouth.
 
 ## Testing without a car

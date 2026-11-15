@@ -132,8 +132,8 @@ fun SettingsScreen(onBack: () -> Unit) {
                     }
                     CarChatService.start(context)
                 } else {
+                    app.car.onSettingsDisabled(CarBots.parse(settings.carBots))
                     CarChatService.stop(context)
-                    app.car.notifier.cancelAll(CarBots.parse(settings.carBots))
                 }
             }
         }

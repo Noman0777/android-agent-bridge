@@ -11,6 +11,9 @@
     <string name="notif_text_stay">Timeouts are off. Stop, the tile, or the kill switch ends it immediately.</string>
     <string name="car_channel">Car chat</string>
     <string name="car_channel_desc">Messages between you and your agents. Android Auto reads these aloud.</string>
+    <string name="car_channel_quiet">Car chat prompts</string>
+    <string name="car_channel_quiet_desc">Silent prompts so you can start a message while Android Auto is connected. No sound.</string>
+    <string name="car_standing">Talk to %1$s.</string>
     <string name="car_service_channel">Car chat connection</string>
     <string name="car_service_title">Car chat on</string>
     <string name="car_service_text">Your agents can message you in the car. Phone control still needs Arm.</string>
