@@ -27,6 +27,12 @@ data class SafetyConfig(
     val screenshotsEnabled: Boolean = false,
     val removedDefaults: Set<String> = emptySet(),
     val extraDeny: Set<String> = emptySet(),
+    /**
+     * "Stay armed until I disarm". When true, the idle timeout and session cap do not
+     * end the session. Stop, the tile, the kill switch, disarm-on-lock, confirm prompts,
+     * the denylist, redaction, and per-action timeouts all still apply.
+     */
+    val stayArmed: Boolean = false,
 )
 
 object Policy {

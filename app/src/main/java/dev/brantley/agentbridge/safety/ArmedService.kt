@@ -80,6 +80,10 @@ class ArmedService : Service() {
         scope.launch {
             val settings = app.settings.settings.first()
             app.core.config = settings.toSafety()
+            // Refresh the ongoing notification so "stay armed" is visible.
+            if (app.core.armed.value) {
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
+            }
         }
         app.session.listen()
     }
@@ -129,8 +133,8 @@ class ArmedService : Service() {
             )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_bridge)
-            .setContentTitle(getString(R.string.notif_title))
-            .setContentText(getString(R.string.notif_text))
+            .setContentTitle(getString(if (stayArmed()) R.string.notif_title_stay else R.string.notif_title))
+            .setContentText(getString(if (stayArmed()) R.string.notif_text_stay else R.string.notif_text))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(open)
@@ -138,6 +142,8 @@ class ArmedService : Service() {
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
+
+    private fun stayArmed(): Boolean = (application as BridgeApp).core.config.stayArmed
 
     private fun ensureChannel() {
         val manager = getSystemService(NotificationManager::class.java)

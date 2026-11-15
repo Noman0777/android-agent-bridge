@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
 import { callPhone, errorEnvelope, type Envelope } from "./client.js";
+import { carInbox, carReply, inboxMessages } from "./car.js";
 import { loadConfig } from "./config.js";
 import { serveMcp } from "./mcp.js";
 import { renderQr, startPair } from "./pair.js";
@@ -17,6 +18,9 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "pair") {
     return pairCommand(rest);
+  }
+  if (command === "car") {
+    return carCommand(rest);
   }
   let params: unknown = {};
   if (rest.length > 0) {
@@ -80,6 +84,76 @@ async function pairCommand(args: string[]): Promise<number> {
   }
 }
 
+function missingConfig(): number {
+  writeEnvelope(
+    errorEnvelope(
+      "local",
+      "BAD_ARGS",
+      "Missing relay config.",
+      "never",
+      "Set ABRIDGE_RELAY_URL, ABRIDGE_ROOM, and ABRIDGE_AGENT_TOKEN or run abridge pair.",
+    ),
+  );
+  return 1;
+}
+
+async function carCommand(args: string[]): Promise<number> {
+  const [sub, ...rest] = args;
+  let bot = "";
+  let replyTo: string | undefined;
+  let after = 0;
+  let once = false;
+  let intervalMs = 3000;
+  const words: string[] = [];
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === "--bot") bot = rest[++i] ?? "";
+    else if (arg === "--reply-to") replyTo = rest[++i];
+    else if (arg === "--after") after = Number.parseInt(rest[++i] ?? "0", 10) || 0;
+    else if (arg === "--interval") intervalMs = Math.max(1000, (Number.parseFloat(rest[++i] ?? "3") || 3) * 1000);
+    else if (arg === "--once") once = true;
+    else words.push(arg);
+  }
+  if (sub === "reply") {
+    const text = words.join(" ").trim();
+    if (!bot.trim() || !text) {
+      writeEnvelope(
+        errorEnvelope("local", "BAD_ARGS", "car reply needs --bot and text.", "never", 'Example: abridge car reply --bot "Travel Bot" "Booked."'),
+      );
+      return 1;
+    }
+    const config = loadConfig();
+    if (!config) return missingConfig();
+    const envelope = await carReply(config, { bot: bot.trim(), text, ...(replyTo ? { replyTo } : {}) });
+    writeEnvelope(envelope);
+    return envelope.ok ? 0 : 1;
+  }
+  if (sub === "listen" || sub === "inbox") {
+    const config = loadConfig();
+    if (!config) return missingConfig();
+    const single = once || sub === "inbox";
+    let cursor = after;
+    for (;;) {
+      const envelope = await carInbox(config, cursor);
+      if (!envelope.ok) {
+        writeEnvelope(envelope);
+        if (single || envelope.error?.code === "UNAUTHORIZED") return 1;
+      } else {
+        for (const message of inboxMessages(envelope)) {
+          process.stdout.write(JSON.stringify({ type: "car.say", ...message }) + "\n");
+          cursor = Math.max(cursor, message.seq);
+        }
+        if (single) return 0;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+  writeEnvelope(
+    errorEnvelope("local", "BAD_ARGS", "Unknown car command.", "never", "Use: abridge car reply|listen|inbox"),
+  );
+  return 1;
+}
+
 function writeEnvelope(envelope: Envelope): void {
   process.stdout.write(JSON.stringify(envelope) + "\n");
 }
@@ -88,6 +162,9 @@ function usage(): string {
   return `abridge pair --relay <url> [--admin-token <token>]
 abridge <method> [json-params]
 abridge mcp
+abridge car reply --bot <name> [--reply-to <id>] <text>
+abridge car listen [--after <seq>] [--interval <seconds>] [--once]
+abridge car inbox [--after <seq>]
 
 Methods: status snapshot tap type swipe scroll key launch list_apps wait screenshot volume
 Config: ~/.config/abridge/config.json or ABRIDGE_RELAY_URL, ABRIDGE_ROOM, ABRIDGE_AGENT_TOKEN

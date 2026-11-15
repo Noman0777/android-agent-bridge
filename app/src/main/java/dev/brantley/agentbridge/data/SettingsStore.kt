@@ -25,7 +25,12 @@ data class AppSettings(
     val screenshotsEnabled: Boolean = false,
     val removedDefaults: Set<String> = emptySet(),
     val extraDeny: Set<String> = emptySet(),
+    val stayArmed: Boolean = false,
+    val carChatEnabled: Boolean = false,
+    val carBots: String = CarBotsDefault,
 )
+
+const val CarBotsDefault = "Grok Bot"
 
 fun AppSettings.toSafety(): SafetyConfig =
     SafetyConfig(
@@ -36,6 +41,7 @@ fun AppSettings.toSafety(): SafetyConfig =
         screenshotsEnabled = screenshotsEnabled,
         removedDefaults = removedDefaults,
         extraDeny = extraDeny,
+        stayArmed = stayArmed,
     )
 
 class SettingsStore(private val context: Context) {
@@ -49,6 +55,9 @@ class SettingsStore(private val context: Context) {
     private val screenshotsKey = booleanPreferencesKey("screenshots_enabled")
     private val removedKey = stringSetPreferencesKey("removed_defaults")
     private val extraKey = stringSetPreferencesKey("extra_deny")
+    private val stayArmedKey = booleanPreferencesKey("stay_armed")
+    private val carChatKey = booleanPreferencesKey("car_chat_enabled")
+    private val carBotsKey = stringPreferencesKey("car_bots")
 
     val settings: Flow<AppSettings> =
         context.settingsDataStore.data.map { prefs ->
@@ -63,6 +72,9 @@ class SettingsStore(private val context: Context) {
                 screenshotsEnabled = prefs[screenshotsKey] ?: false,
                 removedDefaults = prefs[removedKey] ?: emptySet(),
                 extraDeny = prefs[extraKey] ?: emptySet(),
+                stayArmed = prefs[stayArmedKey] ?: false,
+                carChatEnabled = prefs[carChatKey] ?: false,
+                carBots = prefs[carBotsKey] ?: CarBotsDefault,
             )
         }
 
@@ -80,6 +92,9 @@ class SettingsStore(private val context: Context) {
                     screenshotsEnabled = prefs[screenshotsKey] ?: false,
                     removedDefaults = prefs[removedKey] ?: emptySet(),
                     extraDeny = prefs[extraKey] ?: emptySet(),
+                    stayArmed = prefs[stayArmedKey] ?: false,
+                    carChatEnabled = prefs[carChatKey] ?: false,
+                    carBots = prefs[carBotsKey] ?: CarBotsDefault,
                 )
             val next = transform(current)
             prefs[relayUrlKey] = next.relayUrl
@@ -92,6 +107,9 @@ class SettingsStore(private val context: Context) {
             prefs[screenshotsKey] = next.screenshotsEnabled
             prefs[removedKey] = next.removedDefaults
             prefs[extraKey] = next.extraDeny
+            prefs[stayArmedKey] = next.stayArmed
+            prefs[carChatKey] = next.carChatEnabled
+            prefs[carBotsKey] = next.carBots
         }
     }
 }

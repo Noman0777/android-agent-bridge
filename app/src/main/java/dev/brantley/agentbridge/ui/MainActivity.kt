@@ -18,6 +18,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.brantley.agentbridge.BridgeApp
+import dev.brantley.agentbridge.car.CarChatService
 import dev.brantley.agentbridge.data.toSafety
 import dev.brantley.agentbridge.pair.PairLanding
 import dev.brantley.agentbridge.safety.ArmedService
@@ -41,6 +42,9 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(0xFF101614.toInt()),
         )
         notice = noticeFrom(intent)
+        val app = application as BridgeApp
+        val saved = runBlocking { app.settings.settings.first() }
+        if (saved.paired && saved.carChatEnabled) CarChatService.ensureRunning(this)
         setContent {
             AgentBridgeTheme {
                 val nav = rememberNavController()

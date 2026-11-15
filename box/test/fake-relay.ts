@@ -16,6 +16,7 @@ export interface FakeRelay {
   agentToken: string;
   deviceToken: string;
   agentSockets: number;
+  carReplies: unknown[];
   dropAgents: () => Promise<void>;
   pauseAgent: () => void;
   holdDevice: () => void;
@@ -64,7 +65,39 @@ export async function startFakeRelay(): Promise<FakeRelay> {
   const gate = { hold: false };
   const extras: Ws[] = [];
 
+  const carInbox = [{ seq: 1, id: "m1", bot: "Travel Bot", text: "find a hotel", at: "2026-01-02T03:04:05.000Z" }];
+  const carReplies: unknown[] = [];
   const server = createServer((req, res) => {
+    const carPath = (req.url ?? "").match(/^\/v1\/room\/([^/]+)\/car\/(reply|inbox)(\?.*)?$/);
+    if (carPath) {
+      if ((req.headers.authorization ?? "") !== `Bearer ${agentToken}`) {
+        res.writeHead(401);
+        res.end('{"ok":false,"error":"unauthorized"}');
+        return;
+      }
+      if (carPath[2] === "inbox" && req.method === "GET") {
+        const after = Number(new URLSearchParams(carPath[3]?.slice(1) ?? "").get("after") ?? "0");
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, messages: carInbox.filter((m) => m.seq > after) }));
+        return;
+      }
+      if (carPath[2] === "reply" && req.method === "POST") {
+        let raw = "";
+        req.on("data", (chunk) => (raw += chunk));
+        req.on("end", () => {
+          const body = JSON.parse(raw) as { bot?: string; text?: string };
+          if (!body.bot || !body.text) {
+            res.writeHead(400);
+            res.end('{"ok":false,"error":"bad_request"}');
+            return;
+          }
+          carReplies.push(body);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: true, delivered: "queued" }));
+        });
+        return;
+      }
+    }
     if (req.method === "POST" && req.url === "/v1/pair/start") {
       if ((req.headers.authorization ?? "") !== `Bearer ${admin}`) {
         res.writeHead(401);
@@ -121,6 +154,7 @@ export async function startFakeRelay(): Promise<FakeRelay> {
     room,
     agentToken,
     deviceToken,
+    carReplies,
     get agentSockets() {
       return agentSockets;
     },

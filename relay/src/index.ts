@@ -46,7 +46,14 @@ export default {
         const stub = env.ROOM.get(env.ROOM.idFromName(room));
         return stub.fetch(new Request("https://room.internal/revoke", { method: "POST", headers }));
       }
-      const socket = url.pathname.match(/^\/v1\/room\/([^/]+)\/(device|agent)$/);
+      const car = url.pathname.match(/^\/v1\/room\/([^/]+)\/car\/(reply|inbox)$/);
+      if (car && ((car[2] === "reply" && request.method === "POST") || (car[2] === "inbox" && request.method === "GET"))) {
+        const room = decodeURIComponent(car[1]);
+        if (!ROOM_ID.test(room)) return new Response("not found", { status: 404 });
+        const stub = env.ROOM.get(env.ROOM.idFromName(room));
+        return stub.fetch(request);
+      }
+      const socket = url.pathname.match(/^\/v1\/room\/([^/]+)\/(device|agent|car)$/);
       if (socket && request.method === "GET") {
         const room = decodeURIComponent(socket[1]);
         if (!ROOM_ID.test(room)) return new Response("not found", { status: 404 });

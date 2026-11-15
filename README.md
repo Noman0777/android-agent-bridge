@@ -145,7 +145,19 @@ All of these are enforced on the phone.
 - **Screenshots.** Off unless you turn them on in Settings. Secure windows return `SECURE_SCREEN`. A full-screen PNG can go over the 1 MiB relay frame cap, so the phone scales it down.
 - **Audit log.** Every command is recorded with time, method, package, a short target, the decision, and the result code. Typed text is stored as a length. Unpair clears the log.
 - **Timeouts.** Idle disarm defaults to 10 minutes (1–60). The session cap defaults to 60 minutes. Disarm on screen lock defaults to on.
+- **Stay armed until I disarm.** Off by default. Turning it on in Settings asks for an on-phone confirmation. While on, the idle timeout and session cap do not end the session; the phone stays armed until you tap Stop on the notification, the Quick Settings tile, or Disarm in the app. The armed notification reads "Agent Bridge armed until you disarm" the whole time. Disarm on screen lock is its own switch and still applies if it is on. Confirm prompts, the denylist, redaction, and per-action timeouts are unchanged. `status` reports `stay_armed`.
 - **Not exposed.** No shell, no install or uninstall, no SMS, no notification reading, no clipboard read, no file access, and no intent other than a launcher activity.
+
+## Car chat (Android Auto)
+
+Talk to your agents by voice in the car. Each agent you list in Settings appears in Android Auto as its own conversation; you reply by voice, the message goes through your relay to your agent (a webhook, `abridge car listen`, or the `car_inbox` MCP tool), and the answer comes back and is read aloud. It uses Android Auto messaging notifications, so there is no Car App Library screen and no Google review. For a sideloaded APK, turn on **Unknown sources** in Android Auto's developer settings (tap Version about 10 times to unlock them).
+
+```bash
+abridge car reply --bot "Travel Bot" "Booked. Details are in your email."
+abridge car listen
+```
+
+Setup, the webhook format and secrets (`CAR_WEBHOOK_URL`, `CAR_WEBHOOK_KEY`, `CAR_WEBHOOK_AUTH_HEADER`, `CAR_WEBHOOK_AUTH_SCHEME`), hands-free start and its caveats, Desktop Head Unit testing, and limits are in [docs/CAR_CHAT.md](docs/CAR_CHAT.md). Car messages carry text only; phone control during a drive still goes through Arm and the safety controls below.
 
 ## Relay choices
 

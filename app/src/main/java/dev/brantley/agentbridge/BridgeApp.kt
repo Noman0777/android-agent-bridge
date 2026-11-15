@@ -3,6 +3,7 @@ package dev.brantley.agentbridge
 import android.app.Application
 import android.util.Log
 import dev.brantley.agentbridge.a11y.SwitchingPort
+import dev.brantley.agentbridge.car.CarChat
 import dev.brantley.agentbridge.data.SecureTokenStore
 import dev.brantley.agentbridge.data.SettingsStore
 import dev.brantley.agentbridge.net.BridgeLog
@@ -31,6 +32,8 @@ class BridgeApp : Application() {
         private set
     lateinit var session: SessionLink
         private set
+    lateinit var car: CarChat
+        private set
     val link = MutableStateFlow(SocketStatus.Disconnected)
 
     override fun onCreate() {
@@ -56,5 +59,6 @@ class BridgeApp : Application() {
             )
         rpc = Rpc(core)
         session = SessionLink(this)
+        car = CarChat(this)
     }
 }
