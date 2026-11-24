@@ -40,6 +40,8 @@ class PhoneCore(
     private val audit: AuditLog,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val prompter: ConfirmPrompter,
+    /** Called with the granted day (yyyy-MM-dd) when the owner taps "Approve today", so the app can persist it. */
+    private val onDailyGrant: (String) -> Unit = {},
 ) {
     val armed = MutableStateFlow(false)
     var config = SafetyConfig()
@@ -49,10 +51,17 @@ class PhoneCore(
     private val refs = RefTable()
     private var seq = 0
 
+    /** True while the owner's once-a-day approval covers today (local calendar day). */
+    fun isDailyGranted(now: Long = clock()): Boolean =
+        config.dailyGrantDate.isNotBlank() && config.dailyGrantDate == Policy.dayOf(now)
+
     fun arm(now: Long = clock()) {
         sessionStart = now
         lastActivity = now
         grantUntil = 0L
+        // NOTE: the daily grant is deliberately NOT cleared here. One approval
+        // covers the whole day, including after a re-arm or a new session.
+        // It ends at local midnight, or when the owner revokes it / unpairs.
         armed.value = true
     }
 
@@ -112,7 +121,7 @@ class PhoneCore(
             return finish(method, scene, method, "denied", argsError, typedLength)
         }
         val description = describeAction(method, params, scene, labelOf(hit?.node))
-        if (Policy.needsConfirm(method, scene.packageName, launchTarget, config, grantUntil, now)) {
+        if (Policy.needsConfirm(method, scene.packageName, launchTarget, config, grantUntil, now, isDailyGranted(now))) {
             val answer = prompter.prompt(description)
             if (!armed.value) {
                 return finish(method, scene, description, "paused", fail("PAUSED", "Agent Bridge is disarmed.", "Arm it from the app on the phone."), typedLength)
@@ -131,6 +140,14 @@ class PhoneCore(
                     return finish(method, scene, description, "denied", fail("DENIED_BY_USER", "You denied this action.", "Approve it on the phone if you want it to run."), typedLength)
                 ConfirmAnswer.APPROVE_5_MIN -> grantUntil = clock() + 5 * 60_000
                 ConfirmAnswer.APPROVE -> Unit
+                ConfirmAnswer.APPROVE_TODAY -> {
+                    // One approval for the rest of the local day: no more prompts
+                    // today, across re-arms, new sessions and app restarts.
+                    val today = Policy.dayOf(clock())
+                    grantUntil = Policy.endOfDayMs(clock())
+                    config = config.copy(dailyGrantDate = today)
+                    onDailyGrant(today)
+                }
             }
         }
         if (!armed.value) {
@@ -376,6 +393,7 @@ class PhoneCore(
             put("armed", armed.value)
             put("a11y", port.a11yEnabled())
             put("confirm_mode", config.confirmMode.wire)
+            put("daily_granted", isDailyGranted())
             put("screenshots", config.screenshotsEnabled)
             put("package", scene.packageName)
             put("window_title", scene.windowTitle)
