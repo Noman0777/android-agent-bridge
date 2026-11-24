@@ -40,6 +40,7 @@ import dev.brantley.agentbridge.data.toSafety
 import dev.brantley.agentbridge.pair.Pairing
 import dev.brantley.agentbridge.safety.ArmedService
 import dev.brantley.agentbridge.safety.Policy
+import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -87,6 +88,19 @@ fun SettingsScreen(onBack: () -> Unit) {
         ModeButton("Writes", settings.confirmMode == "writes") { scope.launch { save(app, settings.copy(confirmMode = "writes")) } }
         ModeButton("Every action", settings.confirmMode == "every") { scope.launch { save(app, settings.copy(confirmMode = "every")) } }
         Text("Settings always asks, and a five-minute approval does not cover it.")
+        val todayGranted = settings.dailyGrantDate.isNotBlank() && settings.dailyGrantDate == LocalDate.now().toString()
+        Text(
+            if (todayGranted) {
+                "Today's approval: granted until midnight. No confirm prompts will appear today."
+            } else {
+                "Today's approval: not granted. The next confirm prompt offers 'Approve today' — one tap, then no more prompts today."
+            },
+        )
+        if (todayGranted) {
+            OutlinedButton(onClick = {
+                scope.launch { save(app, settings.copy(dailyGrantDate = "")) }
+            }) { Text("Revoke today's approval") }
+        }
         Text("Idle timeout ${idle.toInt()} min")
         Slider(value = idle, onValueChange = { idle = it }, valueRange = 1f..60f, steps = 58, onValueChangeFinished = {
             scope.launch { save(app, settings.copy(idleTimeoutMin = idle.toInt())) }
@@ -203,7 +217,8 @@ fun SettingsScreen(onBack: () -> Unit) {
                 app.core.disarm()
                 app.session.hangUp()
                 ArmedService.stop(context)
-                app.settings.update { it.copy(relayUrl = "", room = "", paired = false) }
+                app.settings.update { it.copy(relayUrl = "", room = "", paired = false, dailyGrantDate = "") }
+                app.core.config = app.core.config.copy(dailyGrantDate = "")
             }
         }) { Text("Unpair and clear the audit log") }
     }
