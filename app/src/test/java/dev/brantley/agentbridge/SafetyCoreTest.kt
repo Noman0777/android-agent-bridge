@@ -146,6 +146,106 @@ class SafetyCoreTest {
     }
 
     @Test
+    fun approveTodayGrantsRestOfDayAcrossRearmAndExpiresAtMidnight() = runBlocking {
+        var now = 0L
+        val prompts = mutableListOf<String>()
+        val grantedDays = mutableListOf<String>()
+        val port = FakePort(Scene("com.example.messages", "Messages", messages()))
+        val core =
+            PhoneCore(
+                port,
+                AuditLog(),
+                clock = { now },
+                prompter = ConfirmPrompter(ask = {
+                    prompts += it
+                    ConfirmAnswer.APPROVE_TODAY
+                }),
+                onDailyGrant = { grantedDays += it },
+            )
+        core.config = SafetyConfig(stayArmed = true)
+        core.arm(0)
+        core.handle("snapshot", buildJsonObject { })
+        core.handle("tap", buildJsonObject { put("ref", "@s1:e1") })
+        assertEquals(1, prompts.size)
+        assertEquals(listOf(Policy.dayOf(0)), grantedDays)
+        assertEquals("true", ok(core.handle("status", buildJsonObject { })).string("daily_granted"))
+        // No more prompts for the rest of the day.
+        core.handle("tap", buildJsonObject { put("ref", "@s1:e1") })
+        core.handle("tap", buildJsonObject { put("ref", "@s1:e1") })
+        assertEquals(1, prompts.size)
+        // The grant survives disarm + re-arm the same day.
+        core.disarm()
+        core.arm(0)
+        core.handle("tap", buildJsonObject { put("ref", "@s1:e1") })
+        assertEquals(1, prompts.size)
+        // A fresh core with the persisted date (app restart) also grants.
+        val restarted =
+            PhoneCore(
+                FakePort(Scene("com.example.messages", "Messages", messages())),
+                AuditLog(),
+                clock = { now },
+                prompter = ConfirmPrompter(ask = {
+                    prompts += it
+                    ConfirmAnswer.APPROVE
+                }),
+            )
+        restarted.config = SafetyConfig(stayArmed = true, dailyGrantDate = grantedDays.single())
+        restarted.arm(0)
+        restarted.handle("snapshot", buildJsonObject { })
+        restarted.handle("tap", buildJsonObject { put("ref", "@s1:e1") })
+        assertEquals(1, prompts.size)
+        // Next day: the grant is gone and the prompt returns.
+        now = 25 * 60 * 60_000L
+        assertEquals("false", ok(core.handle("status", buildJsonObject { })).string("daily_granted"))
+        core.handle("tap", buildJsonObject { put("ref", "@s1:e1") })
+        assertEquals(2, prompts.size)
+    }
+
+    @Test
+    fun paymentAppsAreDenied() = runBlocking {
+        val denied =
+            listOf(
+                "com.nayapay.app", // NayaPay
+                "com.sadapay.app", // SadaPay
+                "com.techlogix.mobilinkcustomer", // JazzCash
+                "pk.com.telenor.phoenix", // easypaisa
+                "app.com.brd", // UBL Digital
+                "team.opay.pay.pakistan", // OPay
+                "com.raqamidigital.cbt", // Raqami
+                "com.digibop.mobile", // digiBOP
+                "com.samsung.android.spay", // Samsung Pay
+                "com.google.android.apps.nbu.paisa.user", // Google Pay
+                "invo8.meezan.mb", // Meezan
+                "com.samsung.android.samsungpass", // Samsung Pass
+            )
+        denied.forEach { assertTrue("expected $it denied", Policy.isDenied(it, SafetyConfig())) }
+        val allowed =
+            listOf(
+                "com.UCMobile.intl", // UC Browser
+                "com.android.chrome", // Chrome
+                "com.google.android.youtube", // YouTube
+                "com.sec.android.gallery3d", // Samsung Gallery — owner: allowed
+            )
+        allowed.forEach { assertFalse("expected $it allowed", Policy.isDenied(it, SafetyConfig())) }
+        val world = world()
+        world.core.arm(0)
+        assertEquals("DENIED_APP", fail(world.core.handle("launch", buildJsonObject { put("package", "com.nayapay.app") })))
+        assertNull(world.port.launched)
+        assertEquals("DENIED_APP", fail(world.core.handle("launch", buildJsonObject { put("package", "com.sadapay.app") })))
+        assertNull(world.port.launched)
+        // A payment app in the foreground blocks everything, even reads.
+        world.port.scene = Scene("com.nayapay.app", "NayaPay", messages())
+        assertEquals("DENIED_APP", fail(world.core.handle("snapshot", buildJsonObject { })))
+        world.port.scene = Scene("com.example.messages", "Messages", messages())
+        // The Gallery is allowed — the owner said it can be opened.
+        ok(world.core.handle("launch", buildJsonObject { put("package", "com.sec.android.gallery3d") }))
+        assertEquals("com.sec.android.gallery3d", world.port.launched)
+        // UC Browser launches.
+        ok(world.core.handle("launch", buildJsonObject { put("package", "com.UCMobile.intl") }))
+        assertEquals("com.UCMobile.intl", world.port.launched)
+    }
+
+    @Test
     fun confirmTimesOutAfterTwentySeconds() = runTest {
         val port = FakePort(Scene("com.example.messages", "Messages", messages()))
         val core =
