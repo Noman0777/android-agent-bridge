@@ -26,6 +26,7 @@ data class AppSettings(
     val removedDefaults: Set<String> = emptySet(),
     val extraDeny: Set<String> = emptySet(),
     val stayArmed: Boolean = false,
+    val dailyGrantDate: String = "",
     val carChatEnabled: Boolean = false,
     val carBots: String = CarBotsDefault,
 )
@@ -42,6 +43,7 @@ fun AppSettings.toSafety(): SafetyConfig =
         removedDefaults = removedDefaults,
         extraDeny = extraDeny,
         stayArmed = stayArmed,
+        dailyGrantDate = dailyGrantDate,
     )
 
 class SettingsStore(private val context: Context) {
@@ -56,6 +58,7 @@ class SettingsStore(private val context: Context) {
     private val removedKey = stringSetPreferencesKey("removed_defaults")
     private val extraKey = stringSetPreferencesKey("extra_deny")
     private val stayArmedKey = booleanPreferencesKey("stay_armed")
+    private val dailyGrantDateKey = stringPreferencesKey("daily_grant_date")
     private val carChatKey = booleanPreferencesKey("car_chat_enabled")
     private val carBotsKey = stringPreferencesKey("car_bots")
 
@@ -73,6 +76,7 @@ class SettingsStore(private val context: Context) {
                 removedDefaults = prefs[removedKey] ?: emptySet(),
                 extraDeny = prefs[extraKey] ?: emptySet(),
                 stayArmed = prefs[stayArmedKey] ?: false,
+                dailyGrantDate = prefs[dailyGrantDateKey].orEmpty(),
                 carChatEnabled = prefs[carChatKey] ?: false,
                 carBots = prefs[carBotsKey] ?: CarBotsDefault,
             )
@@ -93,6 +97,7 @@ class SettingsStore(private val context: Context) {
                     removedDefaults = prefs[removedKey] ?: emptySet(),
                     extraDeny = prefs[extraKey] ?: emptySet(),
                     stayArmed = prefs[stayArmedKey] ?: false,
+                    dailyGrantDate = prefs[dailyGrantDateKey].orEmpty(),
                     carChatEnabled = prefs[carChatKey] ?: false,
                     carBots = prefs[carBotsKey] ?: CarBotsDefault,
                 )
@@ -108,6 +113,7 @@ class SettingsStore(private val context: Context) {
             prefs[removedKey] = next.removedDefaults
             prefs[extraKey] = next.extraDeny
             prefs[stayArmedKey] = next.stayArmed
+            prefs[dailyGrantDateKey] = next.dailyGrantDate
             prefs[carChatKey] = next.carChatEnabled
             prefs[carBotsKey] = next.carBots
         }
