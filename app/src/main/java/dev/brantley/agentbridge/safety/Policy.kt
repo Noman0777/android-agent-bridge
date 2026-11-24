@@ -14,13 +14,13 @@ enum class ConfirmMode {
             when (value.lowercase()) {
                 "off" -> OFF
                 "every" -> EVERY
-                else -> WRITES
+                else -> OFF
             }
     }
 }
 
 data class SafetyConfig(
-    val confirmMode: ConfirmMode = ConfirmMode.WRITES,
+    val confirmMode: ConfirmMode = ConfirmMode.OFF,
     val idleTimeoutMin: Int = 10,
     val sessionTimeoutMin: Int = 60,
     val disarmOnLock: Boolean = true,
