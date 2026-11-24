@@ -6,6 +6,7 @@ enum class ConfirmAnswer {
     APPROVE,
     DENY,
     APPROVE_5_MIN,
+    APPROVE_TODAY,
 }
 
 class ConfirmPrompter(
