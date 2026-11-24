@@ -43,6 +43,10 @@ When the human is driving, they may talk to you through car chat ([docs/CAR_CHAT
 
 The human can turn on "Stay armed until I disarm" in Settings (it asks them to confirm). Then the idle timeout and session cap do not end the session, and `phone_status` reports `stay_armed: true`. Stop, the tile, and the in-app Disarm still end it at once, and every other check is unchanged. Do not ask the human to turn it on for you; it is their call.
 
+### Approve once a day
+
+The confirm prompt offers "Approve today". One tap skips all write prompts until local midnight — across re-arms, new sessions, and app restarts. `phone_status` reports `daily_granted: true` while it is active. If it is false and the human is being prompted repeatedly, tell them the prompt has an "Approve today" button; do not ask them to switch confirm mode to Off. They can revoke it in Settings ("Revoke today's approval"), and unpairing clears it.
+
 ## 2. The local PC
 
 Use [agent-desktop](https://github.com/vercel-labs/agent-desktop) v1.0.2 or newer on the person's own Mac, Windows, or Linux computer.
