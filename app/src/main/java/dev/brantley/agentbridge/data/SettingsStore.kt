@@ -114,7 +114,7 @@ class SettingsStore(private val context: Context) {
             prefs[extraKey] = next.extraDeny
             prefs[stayArmedKey] = next.stayArmed
             prefs[dailyGrantDateKey] = next.dailyGrantDate
-            prefs[carChatEnabled] = next.carChatEnabled
+            prefs[carChatKey] = next.carChatEnabled
             prefs[carBotsKey] = next.carBots
         }
     }
