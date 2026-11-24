@@ -400,6 +400,7 @@ class BridgeAccessibilityService : AccessibilityService(), DevicePort {
                 addView(button("Deny", "Deny") { onAnswer(ConfirmAnswer.DENY) })
                 addView(button("Approve", "Approve") { onAnswer(ConfirmAnswer.APPROVE) })
                 addView(button("Approve 5 min", "Approve 5 min") { onAnswer(ConfirmAnswer.APPROVE_5_MIN) })
+                addView(button("Approve today", "Approve today") { onAnswer(ConfirmAnswer.APPROVE_TODAY) })
             }
         val params =
             WindowManager.LayoutParams(
