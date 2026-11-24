@@ -22,14 +22,22 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;35.0.0"
-      - name: Build debug APK
+      - name: Generate release keystore
+        run: |
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/abridge-release.jks" -alias abridge -keyalg RSA -keysize 2048 -validity 10000 -storepass abridge-release -keypass abridge-release -dname "CN=Agent Bridge, O=Agent Bridge, C=US"
+          echo "ABRIDGE_KEYSTORE_FILE=$RUNNER_TEMP/abridge-release.jks" >> "$GITHUB_ENV"
+          echo "ABRIDGE_KEYSTORE_PASSWORD=abridge-release" >> "$GITHUB_ENV"
+          echo "ABRIDGE_KEY_ALIAS=abridge" >> "$GITHUB_ENV"
+          echo "ABRIDGE_KEY_PASSWORD=abridge-release" >> "$GITHUB_ENV"
+      - name: Build debug + release APK
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x ./gradlew
-          ./gradlew :app:assembleDebug --stacktrace
+          ./gradlew :app:assembleDebug :app:assembleRelease --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/app-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/app-release.apk"
           cd "$GITHUB_WORKSPACE"
-          sha256sum app-debug.apk > SHA256SUMS
+          sha256sum app-debug.apk app-release.apk > SHA256SUMS
       - name: Create Release v1.0.0
         uses: softprops/action-gh-release@v2
         with:
@@ -37,7 +45,9 @@ jobs:
           name: v1.0.0
           files: |
             app-debug.apk
+            app-release.apk
             SHA256SUMS
           body: |
-            Debug APK built from the main branch via GitHub Actions.
-            Signed with the runner's throwaway debug key. A new release may need an uninstall before it will install over an older debug build (signature mismatch).
+            Debug and release APKs built from the main branch via GitHub Actions.
+            The release APK is signed with a release key (debuggable=false) — use it if the debug APK will not install.
+            A new release may need an uninstall before it will install over an older debug build (signature mismatch).
