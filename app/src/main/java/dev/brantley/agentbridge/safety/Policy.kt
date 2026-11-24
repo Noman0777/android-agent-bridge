@@ -90,8 +90,6 @@ object Policy {
             "com.ofss.tx.meezan", // Meezan Mobile App 2.0 (legacy)
             // Password vault on this phone:
             "com.samsung.android.samsungpass", // Samsung Pass
-            // Gallery — never open (owner order 2026-11-24):
-            "com.sec.android.gallery3d", // Samsung Gallery
         )
 
     /** Local calendar day (yyyy-MM-dd) for an epoch-ms instant. The daily approval is keyed on this. */
