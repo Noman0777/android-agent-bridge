@@ -28,7 +28,7 @@ Failure:
 
 | Method | Params | Notes |
 | --- | --- | --- |
-| `status` | `{}` | Armed flag, accessibility, confirm mode, foreground package. Not a write. |
+| `status` | `{}` | Armed flag, accessibility, confirm mode, `daily_granted` (once-a-day approval active), foreground package. Not a write. |
 | `snapshot` | `interactiveOnly=true`, `maxNodes=300`, optional `rootRef` | Element tree. Refused with `DENIED_APP` and no tree when the foreground app is denylisted. |
 | `tap` | `ref` or `x`,`y`, `long=false` | Write. |
 | `type` | optional `ref`, `text`, `clear=false`, `submit=false` | Write. Password targets return `PASSWORD_FIELD`. Typed text is never stored in the audit log. Hint or placeholder text (`isShowingHintText`, or text equal to `hintText`) is treated as empty, so a type without `clear` does not append to it. |
