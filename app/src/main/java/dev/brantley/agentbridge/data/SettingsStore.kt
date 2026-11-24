@@ -18,7 +18,7 @@ data class AppSettings(
     val relayUrl: String = "",
     val room: String = "",
     val paired: Boolean = false,
-    val confirmMode: String = "writes",
+    val confirmMode: String = "off",
     val idleTimeoutMin: Int = 10,
     val sessionTimeoutMin: Int = 60,
     val disarmOnLock: Boolean = true,
@@ -68,7 +68,7 @@ class SettingsStore(private val context: Context) {
                 relayUrl = prefs[relayUrlKey].orEmpty(),
                 room = prefs[roomKey].orEmpty(),
                 paired = prefs[pairedKey] ?: false,
-                confirmMode = prefs[confirmModeKey] ?: "writes",
+                confirmMode = prefs[confirmModeKey] ?: "off",
                 idleTimeoutMin = prefs[idleKey] ?: 10,
                 sessionTimeoutMin = prefs[sessionKey] ?: 60,
                 disarmOnLock = prefs[disarmOnLockKey] ?: true,
@@ -89,7 +89,7 @@ class SettingsStore(private val context: Context) {
                     relayUrl = prefs[relayUrlKey].orEmpty(),
                     room = prefs[roomKey].orEmpty(),
                     paired = prefs[pairedKey] ?: false,
-                    confirmMode = prefs[confirmModeKey] ?: "writes",
+                    confirmMode = prefs[confirmModeKey] ?: "off",
                     idleTimeoutMin = prefs[idleKey] ?: 10,
                     sessionTimeoutMin = prefs[sessionKey] ?: 60,
                     disarmOnLock = prefs[disarmOnLockKey] ?: true,
@@ -114,7 +114,7 @@ class SettingsStore(private val context: Context) {
             prefs[extraKey] = next.extraDeny
             prefs[stayArmedKey] = next.stayArmed
             prefs[dailyGrantDateKey] = next.dailyGrantDate
-            prefs[carChatKey] = next.carChatEnabled
+            prefs[carChatEnabled] = next.carChatEnabled
             prefs[carBotsKey] = next.carBots
         }
     }
